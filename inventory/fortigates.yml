@@ -1,0 +1,14 @@
+---
+all:
+  children:
+    fortigates:
+      hosts:
+        fw-matriz:
+          ansible_host: 192.168.10.1
+          fortios_version: "7"
+        fw-filial01:
+          ansible_host: 192.168.20.1
+          fortios_version: "6"
+        fw-filial02:
+          ansible_host: 192.168.30.1
+          fortios_version: "7"

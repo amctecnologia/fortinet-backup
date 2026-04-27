@@ -1,0 +1,93 @@
+---
+- name: Backup de configuração dos FortiGates
+  hosts: fortigates
+  gather_facts: false
+  ignore_errors: false
+
+  vars_files:
+    - ../config.yml
+
+  vars:
+    backup_timestamp: "{{ lookup('pipe', 'date +%Y%m%dT%H%M%S') }}"
+    backup_filename: "{{ inventory_hostname }}_{{ backup_timestamp }}.conf"
+    host_backup_dir: >-
+      {{
+        backup_base_path ~ '/' ~ inventory_hostname
+        if create_host_folder | bool
+        else backup_base_path
+      }}
+
+  tasks:
+
+    - name: Criar diretório de backup do host
+      ansible.builtin.file:
+        path: "{{ host_backup_dir }}"
+        state: directory
+        mode: "0750"
+      delegate_to: localhost
+      run_once: false
+
+    - name: Obter configuração completa do FortiGate
+      fortinet.fortios.fortios_monitor_fact:
+        selector: system_config_backup
+        params:
+          scope: global
+      register: backup_result
+      ignore_errors: true
+
+    - name: Registrar falha de backup
+      ansible.builtin.debug:
+        msg: "FALHA ao realizar backup de {{ inventory_hostname }}: {{ backup_result.msg | default('erro desconhecido') }}"
+      when: backup_result is failed or backup_result.meta is not defined
+
+    - name: Salvar backup em arquivo local
+      ansible.builtin.copy:
+        content: "{{ backup_result.meta.results }}"
+        dest: "{{ host_backup_dir }}/{{ backup_filename }}"
+        mode: "0640"
+      delegate_to: localhost
+      when:
+        - backup_result is not failed
+        - backup_result.meta is defined
+        - backup_result.meta.results is defined
+
+    - name: Registrar sucesso no log
+      ansible.builtin.lineinfile:
+        path: "{{ log_base_path }}/backup-{{ lookup('pipe', 'date +%Y-%m-%d') }}.log"
+        line: "{{ lookup('pipe', 'date +%Y-%m-%dT%H:%M:%S') }} | SUCESSO | {{ inventory_hostname }} | {{ host_backup_dir }}/{{ backup_filename }}"
+        create: true
+        mode: "0640"
+      delegate_to: localhost
+      when:
+        - backup_result is not failed
+        - backup_result.meta is defined
+        - backup_result.meta.results is defined
+
+    - name: Registrar falha no log
+      ansible.builtin.lineinfile:
+        path: "{{ log_base_path }}/backup-{{ lookup('pipe', 'date +%Y-%m-%d') }}.log"
+        line: "{{ lookup('pipe', 'date +%Y-%m-%dT%H:%M:%S') }} | FALHA   | {{ inventory_hostname }} | {{ backup_result.msg | default('erro desconhecido') }}"
+        create: true
+        mode: "0640"
+      delegate_to: localhost
+      when: backup_result is failed or backup_result.meta is not defined
+
+    - name: Remover backups mais antigos que {{ retention_days }} dias
+      ansible.builtin.find:
+        paths: "{{ host_backup_dir }}"
+        patterns: "*.conf"
+        age: "{{ retention_days }}d"
+        recurse: false
+      register: arquivos_antigos
+      delegate_to: localhost
+      when:
+        - backup_result is not failed
+        - backup_result.meta is defined
+
+    - name: Deletar arquivos de backup expirados
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ arquivos_antigos.files | default([]) }}"
+      delegate_to: localhost
+      when: arquivos_antigos is defined and arquivos_antigos.files | length > 0

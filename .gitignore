@@ -1,0 +1,25 @@
+# Backups (não versionar)
+backups/*
+!backups/.gitkeep
+
+# Logs (não versionar)
+logs/*
+!logs/.gitkeep
+
+# Credenciais e segredos
+.env
+.vault_pass
+*.vault_pass
+host_vars/*.yml.bak
+
+# Arquivos temporários do Ansible
+*.retry
+__pycache__/
+*.pyc
+*.pyo
+
+# Arquivos de IDE
+.vscode/
+.idea/
+*.swp
+*.swo

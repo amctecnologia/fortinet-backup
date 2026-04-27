@@ -1,0 +1,16 @@
+---
+# Diretório base onde os backups serão armazenados
+backup_base_path: "./backups"
+
+# Diretório base onde os logs serão armazenados
+log_base_path: "./logs"
+
+# Número de dias para manter backups (arquivos mais antigos serão removidos)
+retention_days: 90
+
+# Formato do nome do arquivo de backup
+# Variáveis disponíveis: inventory_hostname, ansible_date_time.*
+backup_filename_format: "{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.conf"
+
+# Cria subpasta por equipamento dentro de backup_base_path
+create_host_folder: true

@@ -1,0 +1,6 @@
+---
+# Token criado via: System > Administrators > Create New > REST API Admin
+# Criptografar com: ansible-vault create host_vars/fw-matriz.yml
+fortios_access_token: !vault |
+  $ANSIBLE_VAULT;1.1;AES256
+  <substitua-pelo-conteudo-gerado-pelo-ansible-vault>
