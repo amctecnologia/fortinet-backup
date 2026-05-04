@@ -1,0 +1,4 @@
+---
+fortios_access_token: !vault |
+  $ANSIBLE_VAULT;1.1;AES256
+  <substitua pelo hash gerado com: ansible-vault encrypt_string --vault-password-file ~/.secure/.vault_pass 'TOKEN' --name 'fortios_access_token'>

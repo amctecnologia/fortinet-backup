@@ -6,11 +6,17 @@ backups/*
 logs/*
 !logs/.gitkeep
 
-# Credenciais e segredos
+# Credenciais e segredos — ignorar host_vars de produção
+inventory/host_vars/*.yml
+!inventory/host_vars/.gitkeep
+!inventory/host_vars/fw-matriz.yml
+!inventory/host_vars/fw-filial01.yml
+!inventory/host_vars/fw-filial02.yml
+
+# Vault password file
 .env
 .vault_pass
 *.vault_pass
-host_vars/*.yml.bak
 
 # Arquivos temporários do Ansible
 *.retry

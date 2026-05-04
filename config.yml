@@ -1,9 +1,9 @@
 ---
 # Diretório base onde os backups serão armazenados
-backup_base_path: "./backups"
+backup_base_path: "/opt/fortigate-backup/backups"
 
 # Diretório base onde os logs serão armazenados
-log_base_path: "./logs"
+log_base_path: "/opt/fortigate-backup/logs"
 
 # Número de dias para manter backups (arquivos mais antigos serão removidos)
 retention_days: 90

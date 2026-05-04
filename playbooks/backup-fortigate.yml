@@ -25,31 +25,38 @@
         state: directory
         mode: "0750"
       delegate_to: localhost
-      run_once: false
+
+    - name: Capturar token no contexto do host
+      ansible.builtin.set_fact:
+        _fortios_token: "{{ fortios_access_token }}"
 
     - name: Obter configuração completa do FortiGate
-      fortinet.fortios.fortios_monitor_fact:
-        selector: system_config_backup
-        params:
-          scope: global
+      ansible.builtin.uri:
+        url: "https://{{ ansible_host }}/api/v2/monitor/system/config/backup?scope=global"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ hostvars[inventory_hostname]['_fortios_token'] }}"
+        validate_certs: false
+        return_content: true
+        timeout: 60
+      delegate_to: localhost
       register: backup_result
       ignore_errors: true
 
     - name: Registrar falha de backup
       ansible.builtin.debug:
         msg: "FALHA ao realizar backup de {{ inventory_hostname }}: {{ backup_result.msg | default('erro desconhecido') }}"
-      when: backup_result is failed or backup_result.meta is not defined
+      when: backup_result is failed or backup_result.content is not defined
 
     - name: Salvar backup em arquivo local
       ansible.builtin.copy:
-        content: "{{ backup_result.meta.results }}"
+        content: "{{ backup_result.content }}"
         dest: "{{ host_backup_dir }}/{{ backup_filename }}"
         mode: "0640"
       delegate_to: localhost
       when:
         - backup_result is not failed
-        - backup_result.meta is defined
-        - backup_result.meta.results is defined
+        - backup_result.content is defined
 
     - name: Registrar sucesso no log
       ansible.builtin.lineinfile:
@@ -60,8 +67,7 @@
       delegate_to: localhost
       when:
         - backup_result is not failed
-        - backup_result.meta is defined
-        - backup_result.meta.results is defined
+        - backup_result.content is defined
 
     - name: Registrar falha no log
       ansible.builtin.lineinfile:
@@ -70,7 +76,7 @@
         create: true
         mode: "0640"
       delegate_to: localhost
-      when: backup_result is failed or backup_result.meta is not defined
+      when: backup_result is failed or backup_result.content is not defined
 
     - name: Remover backups mais antigos que {{ retention_days }} dias
       ansible.builtin.find:
@@ -82,7 +88,7 @@
       delegate_to: localhost
       when:
         - backup_result is not failed
-        - backup_result.meta is defined
+        - backup_result.content is defined
 
     - name: Deletar arquivos de backup expirados
       ansible.builtin.file:
