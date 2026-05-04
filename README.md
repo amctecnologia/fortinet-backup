@@ -19,13 +19,16 @@ Backup automatizado de configurações de múltiplos firewalls FortiGate via Ans
 11. [Personalização de diretórios e retenção](#personalização-de-diretórios-e-retenção)
 12. [Como consultar os backups](#como-consultar-os-backups)
 13. [Boas práticas de segurança](#boas-práticas-de-segurança)
-14. [Solução de problemas](#solução-de-problemas)
+14. [Compatibilidade FortiOS 6.x e 7.x](#compatibilidade-fortios-6x-e-7x)
+15. [Solução de problemas](#solução-de-problemas)
 
 ---
 
 ## Objetivo
 
-Realizar backup periódico e automatizado das configurações completas de firewalls FortiGate em ambientes sem FortiManager. Cada equipamento é acessado via token de API individual através de chamadas REST diretas, os backups são salvos localmente com controle de retenção e os tokens são protegidos com Ansible Vault.
+Realizar backup periódico e automatizado das configurações completas de firewalls FortiGate em ambientes sem FortiManager. Cada equipamento é acessado via token de API individual através de chamadas REST diretas com `ansible.builtin.uri`, os backups são salvos localmente com controle de retenção e os tokens são protegidos com Ansible Vault.
+
+O playbook **não depende** da collection `fortinet.fortios` para execução — usa apenas módulos nativos do Ansible (`ansible.builtin.uri`, `ansible.builtin.copy`, `ansible.builtin.file`, etc.).
 
 ---
 
@@ -63,26 +66,17 @@ python3 -m venv venv
 source venv/bin/activate
 pip install --upgrade pip
 pip install ansible
-ansible-galaxy collection install -r requirements.yml
 ```
 
 Validar:
 
 ```bash
 ansible --version
-ansible-galaxy collection list | grep fortinet
 ```
 
-### 4. Ajustar caminhos no config.yml
+> **Nota:** A collection `fortinet.fortios` listada em `requirements.yml` **não é necessária** para execução dos backups. O playbook usa `ansible.builtin.uri` para chamar a API REST do FortiOS diretamente.
 
-Edite `config.yml` e defina os caminhos absolutos para o servidor:
-
-```yaml
-backup_base_path: "/opt/fortigate-backup/backups"
-log_base_path:    "/opt/fortigate-backup/logs"
-```
-
-### 5. Criar o vault password file
+### 4. Criar o vault password file
 
 ```bash
 mkdir -p ~/.secure
@@ -91,6 +85,19 @@ chmod 600 ~/.secure/.vault_pass
 chmod 700 ~/.secure/
 ```
 
+> **Importante:** Use `echo -n` para evitar quebra de linha no final da senha. Uma quebra de linha extra causa falha na descriptografia.
+
+### 5. Configurar caminhos em config.yml
+
+Edite `config.yml` e defina os caminhos **absolutos** para o servidor:
+
+```yaml
+backup_base_path: "/opt/fortigate-backup/backups"
+log_base_path:    "/opt/fortigate-backup/logs"
+```
+
+> Os caminhos **precisam ser absolutos**. Caminhos relativos como `./backups` são resolvidos a partir do diretório `playbooks/`, não da raiz do projeto.
+
 ---
 
 ## Estrutura do projeto
@@ -98,25 +105,34 @@ chmod 700 ~/.secure/
 ```
 /opt/fortigate-backup/
 ├── ansible.cfg                        # Configuração global do Ansible
-├── requirements.yml                   # Dependências de collections
-├── config.yml                         # Caminhos e retenção (caminhos absolutos)
+├── requirements.yml                   # Collection fortinet.fortios (opcional)
+├── config.yml                         # Caminhos absolutos e retenção
 ├── inventory/
-│   ├── fortigates.yml                 # Lista de equipamentos
+│   ├── fortigates.yml                 # Lista de equipamentos (hosts)
 │   ├── group_vars/
-│   │   └── fortigates.yml             # Parâmetros de conexão do grupo
+│   │   └── fortigates.yml             # ansible_connection: local
 │   └── host_vars/
-│       ├── fw-matriz.yml              # Token vault do fw-matriz
-│       ├── fw-filial01.yml            # Token vault do fw-filial01
-│       └── fw-filial02.yml            # Token vault do fw-filial02
+│       ├── fw-matriz.yml              # Token vault (inline) do fw-matriz
+│       ├── fw-filial01.yml            # Token vault (inline) do fw-filial01
+│       └── fw-filial02.yml            # Token vault (inline) do fw-filial02
 ├── playbooks/
 │   └── backup-fortigate.yml           # Playbook principal
 ├── scripts/
-│   └── run-backup.sh                  # Script de execução para cron
+│   └── run-backup.sh                  # Script para cron (PROJECT_DIR hardcoded)
 ├── backups/                           # Backups gerados (não versionado)
 └── logs/                              # Logs de execução (não versionado)
 ```
 
-> **Importante:** `host_vars/` e `group_vars/` ficam dentro de `inventory/`. Isso é necessário para que o Ansible os encontre corretamente ao executar `ansible-playbook`.
+> **Importante:** `host_vars/` e `group_vars/` devem estar **dentro de `inventory/`**. O Ansible busca essas pastas relativo ao diretório do inventário ou do playbook — arquivos na raiz do projeto são ignorados pelo `ansible-playbook`.
+
+### ansible.cfg (configurações relevantes)
+
+```ini
+[defaults]
+inventory         = ./inventory     # Diretório, não arquivo — habilita host_vars/group_vars automáticos
+stdout_callback   = default         # "yaml" requer dependências extras; use "default"
+host_key_checking = False
+```
 
 ---
 
@@ -136,9 +152,9 @@ all:
           fortios_version: "7"
 ```
 
-### Criar o arquivo de token (inline vault)
+### Criar o arquivo de token (inline vault — método obrigatório)
 
-Gere o valor criptografado do token:
+Gere o valor criptografado do token com `ansible-vault encrypt_string`:
 
 ```bash
 ansible-vault encrypt_string \
@@ -164,7 +180,7 @@ fortios_access_token: !vault |
   64363163323562...
 ```
 
-> **Atenção:** Use sempre `ansible-vault encrypt_string` (inline vault), não `ansible-vault create`. O formato de arquivo totalmente criptografado não é carregado corretamente pelo `ansible-playbook`.
+> **Atenção:** Use sempre `ansible-vault encrypt_string` (inline vault). **Não use** `ansible-vault create` — arquivos totalmente criptografados **não são carregados** pelo `ansible-playbook` nesta configuração.
 
 ---
 
@@ -177,8 +193,8 @@ fortios_access_token: !vault |
 3. Clique em **Create New > REST API Admin**
 4. Preencha:
    - **Username:** ansible-backup
-   - **Administrator Profile:** perfil com permissão de leitura
-5. Clique em **OK** — o token será exibido uma única vez
+   - **Administrator Profile:** perfil com permissão de leitura (veja seção de permissões)
+5. Clique em **OK** — o token será exibido **uma única vez**. Copie imediatamente.
 
 ### FortiOS 6.x
 
@@ -204,6 +220,8 @@ curl -k -X POST \
 ```
 
 Resposta esperada: arquivo de configuração salvo. Se retornar JSON com erro, verifique o token e as permissões.
+
+> **FortiOS 7.x requer método POST** neste endpoint. GET retorna HTTP 405 Method Not Allowed.
 
 ---
 
@@ -239,13 +257,11 @@ ansible <hostname> -m debug -a "var=fortios_access_token" \
 
 ### Atualizar token existente
 
-Gere novo valor com `encrypt_string` e substitua no arquivo `host_vars`.
+Gere novo valor com `encrypt_string` e substitua no arquivo `inventory/host_vars/<hostname>.yml`.
 
 ---
 
 ## Execução manual
-
-### Com vault password file
 
 ```bash
 cd /opt/fortigate-backup
@@ -282,7 +298,12 @@ Adicionar linha para execução diária às 02:00:
 0 2 * * * /opt/fortigate-backup/scripts/run-backup.sh --vault-password-file /home/usuario/.secure/.vault_pass
 ```
 
-O script `run-backup.sh` ativa automaticamente o venv e registra logs diários em `logs/backup-YYYY-MM-DD.log`.
+Substitua `usuario` pelo nome do usuário do sistema.
+
+O script `run-backup.sh`:
+- Ativa automaticamente o venv localizado em `PROJECT_DIR/venv`
+- Registra logs diários em `logs/backup-YYYY-MM-DD.log`
+- Tem o caminho do projeto **hardcoded** em `PROJECT_DIR="/opt/fortigate-backup"` — ajuste se instalar em outro local
 
 ---
 
@@ -296,8 +317,6 @@ log_base_path:    "/opt/fortigate-backup/logs"       # Caminho absoluto obrigat�
 retention_days:   90                                  # Dias para manter backups
 create_host_folder: true                              # Subpasta por equipamento
 ```
-
-> Os caminhos devem ser **absolutos**. Caminhos relativos são resolvidos a partir do diretório do playbook, não da raiz do projeto.
 
 Para usar um NAS montado:
 
@@ -340,6 +359,27 @@ cat /opt/fortigate-backup/logs/backup-$(date +%Y-%m-%d).log
 
 ---
 
+## Compatibilidade FortiOS 6.x e 7.x
+
+O playbook usa `ansible.builtin.uri` para chamar diretamente o endpoint REST:
+
+```
+POST /api/v2/monitor/system/config/backup?scope=global
+```
+
+| Aspecto                        | FortiOS 6.x             | FortiOS 7.x             |
+|-------------------------------|-------------------------|-------------------------|
+| Token REST API                | Disponível              | Disponível              |
+| Método HTTP no endpoint       | GET ou POST             | **POST obrigatório**    |
+| Validação de certificado TLS  | Desabilitada no playbook| Desabilitada no playbook|
+
+**Requisitos nos FortiGates (ambas as versões):**
+- HTTPS habilitado na interface de gerenciamento
+- Administrador REST API com perfil de leitura
+- Acesso da rede do servidor Ansible à porta 443 do FortiGate
+
+---
+
 ## Solução de problemas
 
 ### Erro: `stdout_callback = yaml` inválido
@@ -348,13 +388,20 @@ cat /opt/fortigate-backup/logs/backup-$(date +%Y-%m-%d).log
 ERROR! Invalid callback for stdout specified: yaml
 ```
 
-**Causa:** Versão do Ansible incompatível com o callback `yaml`.  
+**Causa:** O callback `yaml` requer Ansible 2.11+ com `community.general` instalado.  
 **Solução:** Em `ansible.cfg`, use `stdout_callback = default`.
 
-### Erro: variável `fortios_access_token` indefinida no playbook
+### Variável `fortios_access_token` indefinida no playbook
 
-**Causa:** Arquivo `host_vars` criado com `ansible-vault create` (arquivo totalmente criptografado) não é carregado corretamente pelo `ansible-playbook`.  
-**Solução:** Recriar usando `ansible-vault encrypt_string` (inline vault) conforme descrito em [Ansible Vault](#ansible-vault-armazenamento-seguro-dos-tokens).
+```
+"fortios_access_token": "VARIABLE IS NOT DEFINED!"
+```
+
+Duas causas possíveis:
+
+1. **Arquivo `host_vars` no local errado.** O `ansible-playbook` busca `host_vars` relativo ao diretório do inventário ou do playbook — **não** da raiz do projeto. Verifique se o arquivo está em `inventory/host_vars/<hostname>.yml`.
+
+2. **Arquivo criado com `ansible-vault create`** (arquivo totalmente criptografado). Este formato **não é carregado** pelo `ansible-playbook`. Recrie usando `ansible-vault encrypt_string` (inline vault).
 
 ### Erro 401 (Unauthorized)
 
@@ -367,11 +414,24 @@ ansible <hostname> -m debug -a "var=fortios_access_token" \
 
 ### Erro 405 (Method Not Allowed)
 
-O endpoint de backup requer método POST. Confirme que `playbooks/backup-fortigate.yml` usa `method: POST` na task `Obter configuração completa do FortiGate`.
+O endpoint de backup no FortiOS 7.x requer método POST. Confirme que `playbooks/backup-fortigate.yml` usa `method: POST` na task de backup.
+
+### Erro de descriptografia do Vault
+
+```
+ERROR! Decryption failed (no vault secrets would unlock)
+```
+
+**Causa:** O vault password file contém uma quebra de linha extra.  
+**Solução:** Recrie com `echo -n "SENHA" > ~/.secure/.vault_pass` (flag `-n` omite a quebra de linha).
+
+### Backup gerado no diretório errado (`playbooks/backups/`)
+
+Os caminhos em `config.yml` devem ser **absolutos**. Caminhos com `./` são resolvidos a partir do diretório `playbooks/`, não da raiz do projeto. Use `/opt/fortigate-backup/backups`.
 
 ### Host não encontrado no inventário
 
-Confirme que `host_vars/<hostname>.yml` está em `inventory/host_vars/`, não na raiz do projeto. O Ansible busca `host_vars` relativo ao diretório do playbook ou do inventory — não ao CWD.
+Confirme que `host_vars/<hostname>.yml` está em `inventory/host_vars/`, não na raiz do projeto.
 
 ### Cron não executa
 
@@ -380,7 +440,3 @@ sudo systemctl status cron
 grep CRON /var/log/syslog | tail -20
 chmod +x /opt/fortigate-backup/scripts/run-backup.sh
 ```
-
-### Backup gerado no diretório errado
-
-Os caminhos em `config.yml` devem ser **absolutos**. Caminhos com `./` são resolvidos a partir do diretório `playbooks/`, não da raiz do projeto.

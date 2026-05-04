@@ -1,3 +1,5 @@
 ---
-collections:
-  - name: fortinet.fortios
+# A collection fortinet.fortios não é necessária para execução do playbook de backup.
+# O playbook usa ansible.builtin.uri para chamar a API REST do FortiOS diretamente.
+# Mantida aqui como referência caso queira usar módulos fortinet em outros playbooks.
+collections: []
