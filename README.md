@@ -193,7 +193,7 @@ fortios_access_token: !vault |
 3. Clique em **Create New > REST API Admin**
 4. Preencha:
    - **Username:** ansible-backup
-   - **Administrator Profile:** perfil com permissão de leitura (veja seção de permissões)
+   - **Administrator Profile:** perfil com permissão **Read/Write** (veja seção de permissões)
 5. Clique em **OK** — o token será exibido **uma única vez**. Copie imediatamente.
 
 ### FortiOS 6.x
