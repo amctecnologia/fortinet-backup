@@ -98,4 +98,4 @@ The script at `scripts/run-backup.sh` has `PROJECT_DIR` hardcoded to `/opt/forti
 - `~/.secure/.vault_pass` must have `chmod 600` and is excluded from the repo
 - Use `echo -n` when creating the vault password file — a trailing newline causes decryption failures
 - `backups/` and `logs/` are gitignored; only `.gitkeep` files are tracked
-- REST API token profile: `System Configuration: Read` only
+- REST API token profile: `System Configuration: Read/Write` — tokens somente leitura geram `#password_mask=1` e omitem `config system admin`, tornando o restore ineficaz

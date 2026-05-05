@@ -227,11 +227,27 @@ Resposta esperada: arquivo de configuração salvo. Se retornar JSON com erro, v
 
 ## Permissões mínimas do token
 
-| Área                  | Permissão mínima |
-|-----------------------|------------------|
-| System Configuration  | Read             |
+> **Atenção:** o nível de permissão do token afeta diretamente o **conteúdo** do backup gerado.
 
-Use um **Admin Profile** customizado com acesso somente leitura ao sistema.
+| Perfil do token        | Permissão     | Comportamento no backup                                                              |
+|------------------------|---------------|--------------------------------------------------------------------------------------|
+| Somente leitura        | `Read`        | FortiOS insere `#password_mask=1` — seção `config system admin` fica **vazia**      |
+| Leitura e escrita      | `Read/Write`  | Backup completo — `config system admin` contém as senhas criptografadas              |
+| super_admin (built-in) | Total         | Backup completo — igual ao perfil Read/Write                                         |
+
+### Implicação prática
+
+Um backup gerado com token de **somente leitura** **não exporta as contas de administrador**. Ao restaurar esse backup em qualquer FortiGate, o dispositivo ficará sem contas configuradas e potencialmente inacessível via web ou console.
+
+### Recomendação
+
+Use um **Admin Profile com permissão Read/Write** (não necessariamente super_admin) para garantir backups completos e restauráveis:
+
+| Área                  | Permissão recomendada |
+|-----------------------|-----------------------|
+| System Configuration  | Read/Write            |
+
+> **Nota sobre valores `ENC`:** As senhas exportadas no backup têm prefixo `ENC` e são cifradas com chave derivada do número de série do dispositivo. Restaurar o backup em um FortiGate **diferente** (serial diferente) pode invalidar as senhas — use o factory reset e reconfigure nesse caso.
 
 ---
 
@@ -351,7 +367,7 @@ cat /opt/fortigate-backup/logs/backup-$(date +%Y-%m-%d).log
 
 1. **Use sempre inline vault** (`encrypt_string`) para os tokens — nunca armazene em texto plano.
 2. **Não use `ansible-vault create`** para os arquivos `host_vars` — use `encrypt_string` e salve em arquivo YAML normal.
-3. **Use perfil de somente leitura** para os tokens de API.
+3. **Use perfil Read/Write** para os tokens de API de backup — tokens somente leitura geram backups incompletos (sem seção `config system admin`), tornando o restore ineficaz.
 4. **Proteja o vault password file** com `chmod 600`.
 5. **Não versione** o diretório `backups/` — arquivos `.conf` contêm senhas e estrutura completa da rede.
 6. **Restrinja o acesso à API do FortiGate** por IP de origem quando possível.
@@ -440,3 +456,22 @@ sudo systemctl status cron
 grep CRON /var/log/syslog | tail -20
 chmod +x /opt/fortigate-backup/scripts/run-backup.sh
 ```
+
+### FortiGate inacessível após restore de backup
+
+**Sintoma:** Após restaurar um `.conf`, o dispositivo reinicia mas a interface web não responde e/ou nenhuma senha funciona no console.
+
+**Causa mais comum:** O backup foi gerado com token de **somente leitura** (`System Configuration: Read`). Nesses casos, o FortiOS adiciona `#password_mask=1` e omite toda a seção `config system admin`. Ao restaurar, o dispositivo fica sem contas de administrador.
+
+**Verificação:** Abra o arquivo `.conf` e procure:
+
+```
+#password_mask=1        <- indica backup incompleto (token somente leitura)
+config system admin     <- se estiver vazio (só 'end'), confirma o problema
+```
+
+**Soluções em ordem:**
+1. Tente `admin` com senha vazia (padrão de fábrica).
+2. Conta `maintainer`: reinicie e, nos primeiros 60 s do prompt de login: `Login: maintainer` / `Password: bcpb<NUMERO_SERIE>` (pode estar desabilitada).
+3. Factory reset: `execute factoryreset` no console, ou via boot menu (opção "Format boot device").
+4. **Prevenção:** Gere backups com token Read/Write — assim `config system admin` será incluído.
